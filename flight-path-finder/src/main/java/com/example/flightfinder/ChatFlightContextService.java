@@ -1,5 +1,8 @@
 package com.example.flightfinder;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -12,7 +15,7 @@ public class ChatFlightContextService {
 
     private final Map<String, FlightQueryContext> contextStore = new ConcurrentHashMap<>();
     private final RestTemplate restTemplate = new RestTemplate();
-    private static final String OPENROUTER_API_KEY = "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"; // replace with env/secure config
+    private static final String TOGETHER_API_KEY = "TOGETHER_API_KEY";
 
     public ChatResponse handleMessage(String conversationId, String userMessage) {
         FlightQueryContext currentContext = contextStore.getOrDefault(conversationId, new FlightQueryContext());
@@ -25,12 +28,87 @@ public class ChatFlightContextService {
                 + "Respond in JSON with two fields: 'context' and 'reply'.";
 
         String llmResponse = callLLM(prompt);
+        System.out.println("🔍 LLM Raw Response: " + llmResponse);
 
-        String contextJson = extractJsonValue(llmResponse, "context");
-        String reply = extractJsonValue(llmResponse, "reply");
+        LLMResult result;
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TogetherResponse together = mapper.readValue(llmResponse, TogetherResponse.class);
+            String contentJson = together.choices.get(0).message.content;
+            System.out.println("📦 content field string: " + contentJson);
+            // Clean up markdown formatting if present
+            if (contentJson.startsWith("```")) {
+                contentJson = contentJson.replaceAll("(?s)```(json)?", "").trim();
+            }
+            result = mapper.readValue(contentJson, LLMResult.class);
 
-        FlightQueryContext updatedContext = FlightQueryContext.fromJson(contextJson);
+        } catch (Exception e) {
+            e.printStackTrace();
+            result = new LLMResult();
+            result.reply = "Sorry, I couldn't understand your request.";
+            result.context = new FlightQueryContext();
+        }
+
+        FlightQueryContext updatedContext = result.context;
+        String reply = result.reply;
+
+        Map<String, String> cityToIata = Map.of(
+                "Amritsar", "ATQ", "Delhi", "DEL", "Bangalore", "BLR", "Chandigarh", "IXC",
+                "Guwahati", "GAU", "Kolkata", "CCU", "Mumbai", "BOM", "Hyderabad", "HYD",
+                "Pune", "PNQ", "Chennai", "MAA"
+        );
+
+        Map<String, String> iataToAirport = Map.of(
+                "ATQ", "Sri Guru Ram Dass Jee International Airport",
+                "DEL", "Indira Gandhi International Airport",
+                "BLR", "Kempegowda International Airport",
+                "IXC", "Chandigarh International Airport",
+                "GAU", "Lokpriya Gopinath Bordoloi Airport",
+                "CCU", "Netaji Subhas Chandra Bose International Airport",
+                "BOM", "Chhatrapati Shivaji Maharaj International Airport",
+                "HYD", "Rajiv Gandhi International Airport",
+                "PNQ", "Pune International Airport",
+                "MAA", "Chennai International Airport"
+        );
+
+        if (updatedContext.from != null) {
+            String normalizedFrom = capitalize(updatedContext.from);
+            String iata = cityToIata.getOrDefault(normalizedFrom, updatedContext.from);
+            updatedContext.from = iata;
+            reply += String.format(" Departing from %s.", iataToAirport.getOrDefault(iata, iata));
+        }
+        if (updatedContext.to != null) {
+            String normalizedTo = capitalize(updatedContext.to);
+            String iata = cityToIata.getOrDefault(normalizedTo, updatedContext.to);
+            updatedContext.to = iata;
+            reply += String.format(" Arriving at %s.", iataToAirport.getOrDefault(iata, iata));
+        }
+
         contextStore.put(conversationId, updatedContext);
+
+        List<Map<String, Object>> flightOptions = new ArrayList<>();
+        if (updatedContext.from != null && updatedContext.to != null) {
+            try {
+                String url = String.format("http://localhost:8080/api/%s?from=%s&to=%s",
+                        "round-trip".equalsIgnoreCase(updatedContext.tripType) ? "roundtrip-summary" : "flight-summary",
+                        updatedContext.from.toUpperCase(),
+                        updatedContext.to.toUpperCase()
+                );
+                ResponseEntity<List> flightResponse = restTemplate.exchange(
+                        url, HttpMethod.GET, null, List.class
+                );
+                flightOptions = flightResponse.getBody();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+
+        reply += flightOptions != null && !flightOptions.isEmpty()
+                ? String.format(" I found %d possible options.", flightOptions.size())
+                : " I couldn't find any matching flights.";
+
+        System.out.printf("Calling flight search with from=%s, to=%s, type=%s\n",
+                updatedContext.from, updatedContext.to, updatedContext.tripType);
 
         return new ChatResponse(updatedContext, reply);
     }
@@ -38,10 +116,10 @@ public class ChatFlightContextService {
     private String callLLM(String prompt) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + OPENROUTER_API_KEY);
+        headers.set("Authorization", "Bearer " + TOGETHER_API_KEY);
 
         Map<String, Object> requestBody = Map.of(
-                "model", "microsoft/phi-4-reasoning:free",
+                "model", "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
                 "messages", List.of(
                         Map.of("role", "system", "content", "You are a helpful assistant for booking flights."),
                         Map.of("role", "user", "content", prompt)
@@ -50,10 +128,9 @@ public class ChatFlightContextService {
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    "https://api.together.xyz/v1/chat/completions",
                     request,
                     Map.class
             );
@@ -67,21 +144,9 @@ public class ChatFlightContextService {
         }
     }
 
-    private String extractJsonValue(String json, String key) {
-        try {
-            String[] parts = json.split("\"" + key + "\":");
-            if (parts.length < 2) return null;
-            String valuePart = parts[1].trim();
-            if (valuePart.startsWith("{")) {
-                int end = valuePart.indexOf("}") + 1;
-                return valuePart.substring(0, end);
-            } else {
-                int end = valuePart.indexOf("\"");
-                return valuePart.substring(1, end);
-            }
-        } catch (Exception e) {
-            return null;
-        }
+    private String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return s.substring(0, 1).toUpperCase() + s.substring(1).toLowerCase();
     }
 
     public static class FlightQueryContext {
@@ -97,21 +162,12 @@ public class ChatFlightContextService {
         }
 
         public static FlightQueryContext fromJson(String json) {
-            FlightQueryContext ctx = new FlightQueryContext();
-            ctx.from = extract(json, "from");
-            ctx.to = extract(json, "to");
-            ctx.departureDate = extract(json, "departureDate");
-            ctx.returnDate = extract(json, "returnDate");
-            ctx.tripType = extract(json, "tripType");
-            return ctx;
-        }
-
-        private static String extract(String json, String key) {
             try {
-                String[] parts = json.split("\"" + key + "\":\"");
-                return parts.length > 1 ? parts[1].split("\"")[0] : null;
+                ObjectMapper mapper = new ObjectMapper();
+                return mapper.readValue(json, FlightQueryContext.class);
             } catch (Exception e) {
-                return null;
+                e.printStackTrace();
+                return new FlightQueryContext();
             }
         }
 
@@ -129,5 +185,29 @@ public class ChatFlightContextService {
             this.reply = reply;
         }
     }
-}
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class LLMResult {
+        @JsonProperty("context")
+        public FlightQueryContext context;
+
+        @JsonProperty("reply")
+        public String reply;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TogetherResponse {
+        public List<Choice> choices;
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Choice {
+            public Message message;
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Message {
+            public String role;
+            public String content;
+        }
+    }
+}
