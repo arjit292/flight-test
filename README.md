@@ -1,28 +1,29 @@
 # ✈️ Flight Path Finder
 
-This Spring Boot application finds the **5 fastest flight paths** (direct or one-stop with layover) between any two airports based on a provided flight schedule CSV.
+A Spring Boot application that finds the 5 fastest flight paths between two airports, supporting direct and one-stop journeys with a layover constraint.
 
 ---
 
-## 🚀 Features
+## 📦 Features
 
-- RESTful API to get fastest flight paths
-- Direct and one-stop combinations (min 120 min layover)
-- Handles flights crossing midnight
-- Uses in-memory H2 database, loaded from CSV at startup
-- Fully self-contained, no external database required
+- Loads flight schedules from a CSV file at startup
+- Uses in-memory H2 database (auto-loaded for both app and tests)
+- Exposes REST API to get fastest paths
+- Handles overnight flights and 120-minute layover minimum
+- Fully testable with `@SpringBootTest`
 
 ---
 
-## 🧰 Tech Stack
+## 🚀 Requirements
 
 - Java 17+
-- Spring Boot
-- Spring Data JPA (H2 database)
-- Maven
+- Maven 3.6+
 
 ---
 
-## 📂 Flight CSV Format
+## 📁 Installation
 
-The input CSV must have the following columns:
+### 1. Clone the Repository
+```bash
+git clone https://github.com/arjit292/flight-test.git
+cd flight-test
