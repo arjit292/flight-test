@@ -45,5 +45,6 @@ public class FlightSearchServiceTest {
         assertThat(result).isNotEmpty();
         assertThat(result.get(0)).containsKey("IXC_GAU");
         assertThat(result.get(1)).containsKeys("IXC_DEL_GAU", "IXC_CCU_GAU", "IXC_BLR_GAU", "IXC_HYD_GAU");
+        assertThat(result.get(1)).doesNotContainKey("IXC_PAT_GAU");
     }
 }

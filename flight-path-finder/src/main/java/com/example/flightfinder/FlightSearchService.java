@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -15,6 +16,7 @@ public class FlightSearchService {
     public List<Map<String, Map<String, Integer>>> findFastestPaths(String from, String to) {
         Map<String, Map<String, Integer>> directMap = new HashMap<>();
         Map<String, Map<String, Integer>> oneStopMap = new LinkedHashMap<>();
+        List<Map<String, Map<String, Integer>>> result = new ArrayList<>();
 
         // Direct flights
         List<Flight> direct = repo.findByFromAirportAndToAirport(from, to);
@@ -24,6 +26,7 @@ public class FlightSearchService {
         }
         if (!directFlights.isEmpty()) {
             directMap.put(from + "_" + to, directFlights);
+            result.add(directMap);
         }
 
         // One-stop flights
@@ -54,21 +57,26 @@ public class FlightSearchService {
             }
         }
 
-        // Sort and pick top 5 unique via-airport routes
+        Set<String> directFlightNos = direct.stream()
+                .map(Flight::getFlightNo)
+                .collect(Collectors.toSet());
+
         oneStops.sort(Comparator.comparingInt(o -> o.totalDuration));
         Set<String> usedVias = new HashSet<>();
+        int remainingSlots = 5 - directFlights.size();
 
         for (OneStopFlight f : oneStops) {
-            if (!usedVias.contains(f.via) && oneStopMap.size() < 5) {
-                usedVias.add(f.via);
-                String key = f.src + "_" + f.via + "_" + f.dst;
-                String flights = f.flight1 + "_" + f.flight2;
-                oneStopMap.put(key, Map.of(flights, f.totalDuration));
-            }
+            if (remainingSlots <= 0) break;
+            if (directFlightNos.contains(f.flight2)) continue;
+            if (usedVias.contains(f.via)) continue;
+
+            usedVias.add(f.via);
+            String key = f.src + "_" + f.via + "_" + f.dst;
+            String flights = f.flight1 + "_" + f.flight2;
+            oneStopMap.put(key, Map.of(flights, f.totalDuration));
+            remainingSlots--;
         }
 
-        List<Map<String, Map<String, Integer>>> result = new ArrayList<>();
-        if (!directMap.isEmpty()) result.add(directMap);
         if (!oneStopMap.isEmpty()) result.add(oneStopMap);
         return result;
     }
