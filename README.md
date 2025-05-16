@@ -18,7 +18,7 @@ This Spring Boot application allows users to find the fastest flight paths betwe
 
 - `FlightSearchService`: Computes flight paths from input CSV
 - `ChatFlightContextService`: Manages chat logic and LLM interaction
-- `ivtest-sched.csv`: Input file with flight schedule (to be placed under `resources/`)
+- `testfile.csv`: Input file with flight schedule (to be placed under `resources/`)
 
 ---
 
