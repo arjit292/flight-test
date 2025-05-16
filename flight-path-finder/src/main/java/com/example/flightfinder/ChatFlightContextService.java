@@ -33,14 +33,9 @@ public class ChatFlightContextService {
         LLMResult result;
         try {
             ObjectMapper mapper = new ObjectMapper();
-            TogetherResponse together = mapper.readValue(llmResponse, TogetherResponse.class);
-            String contentJson = together.choices.get(0).message.content;
-            System.out.println("📦 content field string: " + contentJson);
-            // Clean up markdown formatting if present
-            if (contentJson.startsWith("```")) {
-                contentJson = contentJson.replaceAll("(?s)```(json)?", "").trim();
-            }
-            result = mapper.readValue(contentJson, LLMResult.class);
+            llmResponse = llmResponse.replaceAll("(?s)^```json\\s*", "").trim();
+            System.out.println("📦 content field string: after cleaning " + llmResponse);
+            result = mapper.readValue(llmResponse, LLMResult.class);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -104,7 +99,7 @@ public class ChatFlightContextService {
         }
 
         reply += flightOptions != null && !flightOptions.isEmpty()
-                ? String.format(" I found %d possible options.", flightOptions.size())
+                ? String.format(" I found %d possible options. %s", flightOptions.size(), flightOptions.toString())
                 : " I couldn't find any matching flights.";
 
         System.out.printf("Calling flight search with from=%s, to=%s, type=%s\n",

@@ -14,6 +14,7 @@ com/example/flightfinder/FlightRepository.class
 com/example/flightfinder/ChatFlightContextService$FlightQueryContext.class
 com/example/flightfinder/ChatFlightContextService$ChatResponse.class
 com/example/flightfinder/FlightFinderApplication.class
+com/example/flightfinder/FlightQueryContexts.class
 com/example/flightfinder/FlightSummaryController.class
 com/example/flightfinder/ChatController.class
 com/example/flightfinder/ChatFlightContextService$LLMResult.class
